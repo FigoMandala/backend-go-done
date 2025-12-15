@@ -4,7 +4,7 @@ import { verifyToken } from "../middleware/auth.js";
 
 const router = express.Router();
 
-// GET ALL TASKS
+// GET ALL TASKS (including completed)
 router.get("/", verifyToken, (req, res) => {
   const userId = req.user.user_id;
 
@@ -17,11 +17,14 @@ router.get("/", verifyToken, (req, res) => {
     FROM tasks t
     LEFT JOIN task_categories c ON t.category_id = c.category_id
     WHERE t.user_id = ?
-    ORDER BY t.created_at DESC
+    ORDER BY CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END ASC, t.created_at DESC
     `,
     [userId],
     (err, result) => {
-      if (err) return res.status(500).json({ error: "Database error", err });
+      if (err) {
+        console.error("Database error:", err);
+        return res.status(500).json({ error: "Failed to fetch tasks" });
+      }
       res.json(result);
     }
   );
@@ -36,26 +39,53 @@ router.post("/", verifyToken, (req, res) => {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
-  // Ensure deadline is in YYYY-MM-DD format
-  // If it comes as ISO string, extract date part
-  let deadlineForDB = deadline;
-  if (deadline.includes('T')) {
-    deadlineForDB = deadline.split('T')[0];
+  // Validate inputs
+  if (isNaN(category_id) || !Number.isInteger(Number(category_id))) {
+    return res.status(400).json({ error: "Invalid category ID" });
   }
 
-  db.query(
-    `
-    INSERT INTO tasks (user_id, category_id, title, description, deadline, priority, status, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'pending', NOW())
-    `,
-    [userId, category_id, title, description, deadlineForDB, priority],
-    (err, result) => {
-      if (err) return res.status(500).json({ error: "Database error", err });
+  if (!["Low", "Medium", "High"].includes(priority)) {
+    return res.status(400).json({ error: "Invalid priority" });
+  }
 
-      res.json({
-        message: "Task created successfully",
-        task_id: result.insertId,
-      });
+  // Validate that category exists and belongs to user
+  db.query(
+    "SELECT category_id FROM task_categories WHERE category_id = ? AND user_id = ?",
+    [category_id, userId],
+    (err, catResult) => {
+      if (err) {
+        console.error("Database error:", err);
+        return res.status(500).json({ error: "Failed to create task" });
+      }
+      
+      if (!catResult || catResult.length === 0) {
+        return res.status(400).json({ error: "Invalid category" });
+      }
+
+      // Ensure deadline is in YYYY-MM-DD format
+      let deadlineForDB = deadline;
+      if (deadline.includes('T')) {
+        deadlineForDB = deadline.split('T')[0];
+      }
+
+      db.query(
+        `
+        INSERT INTO tasks (user_id, category_id, title, description, deadline, priority, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'pending', NOW())
+        `,
+        [userId, category_id, title, description, deadlineForDB, priority],
+        (err, result) => {
+          if (err) {
+            console.error("Database error:", err);
+            return res.status(500).json({ error: "Failed to create task" });
+          }
+
+          res.json({
+            message: "Task created successfully",
+            task_id: result.insertId,
+          });
+        }
+      );
     }
   );
 });
@@ -65,49 +95,98 @@ router.put("/:task_id", verifyToken, (req, res) => {
   const taskId = req.params.task_id;
   const userId = req.user.user_id;
 
-  const { category_id, title, description, deadline, priority, status } =
-    req.body;
+  const { category_id, title, description, deadline, priority, status } = req.body;
 
-  // Ensure deadline is in YYYY-MM-DD format
-  // If it comes as ISO string, extract date part
-  let deadlineForDB = deadline;
-  if (deadline && deadline.includes('T')) {
-    deadlineForDB = deadline.split('T')[0];
+  // Whitelist allowed columns for update
+  const allowedColumns = ['category_id', 'title', 'description', 'deadline', 'priority', 'status'];
+  const updates = [];
+  const params = [];
+
+  if (category_id !== undefined) {
+    updates.push("category_id=?");
+    params.push(category_id);
   }
 
+  if (title !== undefined) {
+    if (!title.trim()) {
+      return res.status(400).json({ error: "Title cannot be empty" });
+    }
+    updates.push("title=?");
+    params.push(title);
+  }
+
+  if (description !== undefined) {
+    if (!description.trim()) {
+      return res.status(400).json({ error: "Description cannot be empty" });
+    }
+    updates.push("description=?");
+    params.push(description);
+  }
+
+  if (deadline !== undefined) {
+    let deadlineForDB = deadline;
+    if (deadline.includes("T")) {
+      deadlineForDB = deadline.split("T")[0];
+    }
+    updates.push("deadline=?");
+    params.push(deadlineForDB);
+  }
+
+  if (priority !== undefined) {
+    if (!["Low", "Medium", "High"].includes(priority)) {
+      return res.status(400).json({ error: "Invalid priority" });
+    }
+    updates.push("priority=?");
+    params.push(priority);
+  }
+
+  if (status !== undefined) {
+    if (!["pending", "completed"].includes(status)) {
+      return res.status(400).json({ error: "Invalid status" });
+    }
+    updates.push("status=?");
+    params.push(status);
+    updates.push("updated_at=NOW()");
+  }
+
+  if (updates.length === 0) {
+    return res.status(400).json({ error: "No fields to update" });
+  }
+
+  params.push(taskId, userId);
+
   db.query(
-    `
-    UPDATE tasks 
-    SET category_id=?, title=?, description=?, deadline=?, priority=?, status=?, updated_at=NOW()
-    WHERE task_id=? AND user_id=?
-    `,
-    [
-      category_id,
-      title,
-      description,
-      deadlineForDB,
-      priority,
-      status || "pending",
-      taskId,
-      userId,
-    ],
+    `UPDATE tasks SET ${updates.join(", ")} WHERE task_id=? AND user_id=?`,
+    params,
     (err) => {
-      if (err) return res.status(500).json({ error: "Database error", err });
+      if (err) {
+        console.error("Database error:", err);
+        return res.status(500).json({ error: "Failed to update task" });
+      }
       res.json({ message: "Task updated successfully" });
     }
   );
 });
+
 
 // DELETE TASK
 router.delete("/:task_id", verifyToken, (req, res) => {
   const taskId = req.params.task_id;
   const userId = req.user.user_id;
 
+  // Validate task ID
+  if (isNaN(taskId) || !Number.isInteger(Number(taskId))) {
+    return res.status(400).json({ error: "Invalid task ID" });
+  }
+
   db.query(
     "DELETE FROM tasks WHERE task_id=? AND user_id=?",
     [taskId, userId],
     (err) => {
-      if (err) return res.status(500).json({ error: "Database error", err });
+      if (err) {
+        console.error("Database error:", err);
+        return res.status(500).json({ error: "Failed to delete task" });
+      }
       res.json({ message: "Task deleted successfully" });
     }
   );

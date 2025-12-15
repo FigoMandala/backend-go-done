@@ -13,6 +13,24 @@ router.post("/register", (req, res) => {
     return res.json({ success: false, message: "Semua field wajib diisi!" });
   }
 
+  // Validate password strength (min 8 chars, has uppercase, lowercase, number)
+  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+  if (!passwordRegex.test(password)) {
+    return res.json({ 
+      success: false, 
+      message: "Password minimal 8 karakter dengan huruf besar, huruf kecil, dan angka!" 
+    });
+  }
+
+  // Validate email format
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return res.json({ 
+      success: false, 
+      message: "Format email tidak valid!" 
+    });
+  }
+
   // Check duplicate email
   db.query("SELECT * FROM users WHERE email = ?", [email], (err, result) => {
     if (err) return res.json({ success: false, message: "Server error!" });
@@ -24,25 +42,37 @@ router.post("/register", (req, res) => {
       });
     }
 
-    const hashed = bcrypt.hashSync(password, 10);
+    // Check duplicate username
+    db.query("SELECT * FROM users WHERE username = ?", [username], (err2, result2) => {
+      if (err2) return res.json({ success: false, message: "Server error!" });
 
-    db.query(
-      "INSERT INTO users (first_name, last_name, username, email, password) VALUES (?, ?, ?, ?, ?)",
-      [first_name, last_name, username, email, hashed],
-      (err2) => {
-        if (err2) return res.json({ success: false, message: "Gagal registrasi" });
-
-        res.json({ success: true, message: "Registrasi berhasil!" });
+      if (result2.length > 0) {
+        return res.json({
+          success: false,
+          message: "Username sudah digunakan!"
+        });
       }
-    );
+
+      const hashed = bcrypt.hashSync(password, 10);
+
+      db.query(
+        "INSERT INTO users (first_name, last_name, username, email, password) VALUES (?, ?, ?, ?, ?)",
+        [first_name, last_name, username, email, hashed],
+        (err3) => {
+          if (err3) return res.json({ success: false, message: "Gagal registrasi" });
+
+          res.json({ success: true, message: "Registrasi berhasil!" });
+        }
+      );
+    });
   });
 });
 
 // LOGIN
 router.post("/login", (req, res) => {
-  const { email, password } = req.body;
+  const { emailOrUsername, password } = req.body;
 
-  db.query("SELECT * FROM users WHERE email = ?", [email], (err, result) => {
+  db.query("SELECT * FROM users WHERE email = ? OR username = ?", [emailOrUsername, emailOrUsername], (err, result) => {
     if (err) return res.json({ success: false, message: "Server error" });
 
     if (result.length === 0)
@@ -57,7 +87,7 @@ router.post("/login", (req, res) => {
     const token = jwt.sign(
       { user_id: user.user_id, email: user.email },
       process.env.JWT_SECRET,
-      { expiresIn: "7d" }
+      { expiresIn: "1h" }
     );
 
     res.json({
