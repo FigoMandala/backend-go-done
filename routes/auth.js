@@ -1,82 +1,77 @@
 import express from "express";
+import db from "../db.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import db from "../db.js";
 
 const router = express.Router();
 
-// =========================
 // REGISTER
-// =========================
-router.post("/register", async (req, res) => {
-  const { firstName, lastName, username, email, password } = req.body;
+router.post("/register", (req, res) => {
+  const { first_name, last_name, username, email, password } = req.body;
 
-  try {
-    const hash = await bcrypt.hash(password, 10);
-
-    const sql = `
-      INSERT INTO users (first_name, last_name, username, email, password)
-      VALUES (?, ?, ?, ?, ?)
-    `;
-
-    await db.promise().query(sql, [
-      firstName,
-      lastName,
-      username,
-      email,
-      hash,
-    ]);
-
-    return res.json({
-      success: true,
-      message: "Register success"
-    });
-  } catch (err) {
-    console.log("REGISTER ERROR:", err);
-    return res.json({ success: false, message: "Register failed" });
+  if (!first_name || !last_name || !username || !email || !password) {
+    return res.json({ success: false, message: "Semua field wajib diisi!" });
   }
+
+  // Check duplicate email
+  db.query("SELECT * FROM users WHERE email = ?", [email], (err, result) => {
+    if (err) return res.json({ success: false, message: "Server error!" });
+
+    if (result.length > 0) {
+      return res.json({
+        success: false,
+        message: "Email sudah digunakan!"
+      });
+    }
+
+    const hashed = bcrypt.hashSync(password, 10);
+
+    db.query(
+      "INSERT INTO users (first_name, last_name, username, email, password) VALUES (?, ?, ?, ?, ?)",
+      [first_name, last_name, username, email, hashed],
+      (err2) => {
+        if (err2) return res.json({ success: false, message: "Gagal registrasi" });
+
+        res.json({ success: true, message: "Registrasi berhasil!" });
+      }
+    );
+  });
 });
 
-// =========================
 // LOGIN
-// =========================
-router.post("/login", async (req, res) => {
+router.post("/login", (req, res) => {
   const { email, password } = req.body;
 
-  try {
-    const [rows] = await db.promise().query(
-      "SELECT * FROM users WHERE email = ?",
-      [email]
+  db.query("SELECT * FROM users WHERE email = ?", [email], (err, result) => {
+    if (err) return res.json({ success: false, message: "Server error" });
+
+    if (result.length === 0)
+      return res.json({ success: false, message: "Email tidak ditemukan!" });
+
+    const user = result[0];
+
+    const valid = bcrypt.compareSync(password, user.password);
+    if (!valid)
+      return res.json({ success: false, message: "Password salah!" });
+
+    const token = jwt.sign(
+      { user_id: user.user_id, email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
     );
 
-    if (!rows.length)
-      return res.json({ success: false, message: "Email not found" });
-
-    const user = rows[0];
-
-    const match = await bcrypt.compare(password, user.password);
-    if (!match)
-      return res.json({ success: false, message: "Password incorrect" });
-
-    const token = jwt.sign({ id: user.user_id }, process.env.JWT_SECRET);
-
-    return res.json({
+    res.json({
       success: true,
-      message: "Login success",
+      message: "Login berhasil",
       token,
       user: {
-        user_id: user.user_id,
         first_name: user.first_name,
         last_name: user.last_name,
         username: user.username,
         email: user.email,
-        photo_url: user.photo_url || null,
-      }
+      },
     });
-  } catch (err) {
-    console.log("LOGIN ERROR:", err);
-    return res.json({ success: false, message: "Login error" });
-  }
+  });
 });
 
 export default router;

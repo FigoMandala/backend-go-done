@@ -12,42 +12,29 @@ const pool = mysql.createPool({
   connectionLimit: 10
 });
 
-// ================================
-//  QUERY MONITORING WRAPPER
-// ================================
-const db = {
-  query(sql, params, callback) {
-    const start = Date.now();
+// ===============================================
+// GLOBAL SQL LOGGER
+// ===============================================
+const originalQuery = pool.query;
 
-    // Run actual query
-    pool.query(sql, params, (err, results) => {
-      const end = Date.now();
-      const duration = end - start;
+pool.query = function (...args) {
+  const sql = args[0];
+  const params = args[1];
 
-      console.log("====================================");
-      console.log("📡 [DB QUERY]");
-      console.log("SQL:", sql);
-      console.log("VALUES:", params);
-      console.log("⏱ TIME:", duration + " ms");
-      console.log("====================================");
+  console.log("\n====================================");
+  console.log("🔍 EXECUTING SQL QUERY");
+  console.log("SQL     :", sql);
+  console.log("PARAMS  :", params);
+  console.log("====================================");
 
-      if (callback) callback(err, results);
-    });
-  },
+  const callback = args[2];
 
-  getConnection(callback) {
-    return pool.getConnection(callback);
-  }
+  return originalQuery.call(pool, sql, params, function (err, results) {
+    if (err) {
+      console.log("❌ SQL ERROR:", err.sqlMessage || err);
+    }
+    return callback(err, results);
+  });
 };
 
-// Test connection at startup
-pool.getConnection((err, conn) => {
-  if (err) {
-    console.error("❌ Database connection failed:", err.message);
-  } else {
-    console.log("✅ Database connected");
-    conn.release();
-  }
-});
-
-export default db;
+export default pool;
