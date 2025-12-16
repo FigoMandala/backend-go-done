@@ -74,4 +74,41 @@ router.post("/login", (req, res) => {
   });
 });
 
+// VERIFY TOKEN
+router.get("/verify", (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+
+    if (!token) {
+      return res.status(401).json({ success: false, message: "Token tidak ditemukan" });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Cek apakah user masih ada di database
+    db.query("SELECT user_id, email FROM users WHERE user_id = ?", [decoded.user_id], (err, result) => {
+      if (err) {
+        return res.status(500).json({ success: false, message: "Server error" });
+      }
+
+      if (result.length === 0) {
+        return res.status(401).json({ success: false, message: "User tidak ditemukan" });
+      }
+
+      res.json({ success: true, message: "Token valid" });
+    });
+  } catch (error) {
+    if (error.name === "TokenExpiredError") {
+      return res.status(401).json({ success: false, message: "Token expired" });
+    }
+    res.status(401).json({ success: false, message: "Token tidak valid" });
+  }
+});
+
+// LOGOUT
+router.post("/logout", (req, res) => {
+  // Token dihapus dari client-side (localStorage)
+  res.json({ success: true, message: "Logout berhasil" });
+});
+
 export default router;
