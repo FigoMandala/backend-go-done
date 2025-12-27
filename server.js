@@ -1,5 +1,4 @@
 import express from "express";
-import cors from "cors";
 import dotenv from "dotenv";
 import rateLimit from "express-rate-limit";
 import authRoutes from "./routes/auth.js";
@@ -9,31 +8,6 @@ import categoryRoutes from "./routes/category.js";
 
 dotenv.config();
 const app = express();
-
-// CORS - Restrict to frontend origin only
-const allowedOrigins = [
-  "http://localhost:5173",  // Local dev
-  "http://127.0.0.1:5173",
-  "https://go-done-production.vercel.app", // Production frontend
-  process.env.FRONTEND_URL 
-].filter(Boolean); // Remove undefined/empty values
-
-app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin) {
-      return callback(null, true);
-    }
-
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-
-    // Reject silently, DO NOT throw error
-    return callback(null, false);
-  },
-  credentials: true
-}));
-
 
 // Rate limiting for login (prevent brute force)
 const loginLimiter = rateLimit({
