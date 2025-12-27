@@ -20,7 +20,7 @@
   app.use("/api/categories", categoryRoutes);
 
   app.listen(process.env.PORT, () =>
-    console.log(`Server berjalan di http://127.0.0.1:${process.env.PORT}`)
+    console.log(`GoDone Backend`)
   );
 
   export default app;
