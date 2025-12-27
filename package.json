@@ -4,7 +4,7 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "start": "cross-env NODE_ENV=development node server.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -15,5 +15,8 @@
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.0.2",
     "mysql2": "^3.15.3"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0"
   }
 }

@@ -35,8 +35,21 @@ router.post("/", verifyToken, (req, res) => {
   const userId = req.user.user_id;
   const { category_id, title, description, deadline, priority } = req.body;
 
+  // Strict validation - tidak boleh null atau kosong
   if (!category_id || !title || !description || !deadline || !priority) {
-    return res.status(400).json({ error: "Missing required fields" });
+    return res.status(400).json({ error: "All fields are required: category_id, title, description, deadline, priority" });
+  }
+
+  // Trim dan cek lagi
+  const trimmedTitle = String(title).trim();
+  const trimmedDesc = String(description).trim();
+  
+  if (!trimmedTitle) {
+    return res.status(400).json({ error: "Task title cannot be empty" });
+  }
+  
+  if (!trimmedDesc) {
+    return res.status(400).json({ error: "Task description cannot be empty" });
   }
 
   // Validate inputs
@@ -45,7 +58,12 @@ router.post("/", verifyToken, (req, res) => {
   }
 
   if (!["Low", "Medium", "High"].includes(priority)) {
-    return res.status(400).json({ error: "Invalid priority" });
+    return res.status(400).json({ error: "Invalid priority. Must be Low, Medium, or High" });
+  }
+
+  // Validate deadline format
+  if (!deadline || !/^\d{4}-\d{2}-\d{2}$/.test(deadline)) {
+    return res.status(400).json({ error: "Invalid deadline format. Must be YYYY-MM-DD" });
   }
 
   // Validate that category exists and belongs to user
@@ -59,13 +77,7 @@ router.post("/", verifyToken, (req, res) => {
       }
       
       if (!catResult || catResult.length === 0) {
-        return res.status(400).json({ error: "Invalid category" });
-      }
-
-      // Ensure deadline is in YYYY-MM-DD format
-      let deadlineForDB = deadline;
-      if (deadline.includes('T')) {
-        deadlineForDB = deadline.split('T')[0];
+        return res.status(400).json({ error: "Invalid category - category does not exist or does not belong to you" });
       }
 
       db.query(
@@ -73,7 +85,7 @@ router.post("/", verifyToken, (req, res) => {
         INSERT INTO tasks (user_id, category_id, title, description, deadline, priority, status, created_at)
         VALUES (?, ?, ?, ?, ?, ?, 'pending', NOW())
         `,
-        [userId, category_id, title, description, deadlineForDB, priority],
+        [userId, category_id, trimmedTitle, trimmedDesc, deadline, priority],
         (err, result) => {
           if (err) {
             console.error("Database error:", err);
@@ -141,11 +153,13 @@ router.put("/:task_id", verifyToken, (req, res) => {
   }
 
   if (status !== undefined) {
-    if (!["pending", "completed"].includes(status)) {
+    if (!["pending", "Done"].includes(status)) {
       return res.status(400).json({ error: "Invalid status" });
     }
+    // Normalize status to correct case
+    const normalizedStatus = status === "pending" ? "pending" : "Done";
     updates.push("status=?");
-    params.push(status);
+    params.push(normalizedStatus);
   }
 
   updates.push("updated_at=NOW()");

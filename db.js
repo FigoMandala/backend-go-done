@@ -1,6 +1,7 @@
 import mysql from "mysql2/promise";
 
 let pool = null;
+const DEBUG = process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development';
 
 async function getPool() {
   if (!pool) {
@@ -27,29 +28,29 @@ const db = {
     getPool()
       .then(async (pool) => {
         try {
+          const startTime = Date.now();
           const [results] = await pool.query(sql, params);
+          const duration = Date.now() - startTime;
           
-          console.log("\n====================================");
-          console.log("🔍 EXECUTING SQL QUERY");
-          console.log("SQL     :", sql);
-          console.log("PARAMS  :", params);
-          console.log("✅ SUCCESS");
-          console.log("====================================");
+          if (DEBUG) {
+            console.log("\n[DB] ✅ Query SUCCESS");
+            console.log("[DB] SQL:", sql.substring(0, 100) + (sql.length > 100 ? "..." : ""));
+            console.log("[DB] PARAMS:", params);
+            console.log("[DB] Duration:", duration + "ms");
+            console.log("[DB] Rows:", results.length || 0);
+          }
           
           // Call callback dengan results
           if (typeof callback === 'function') {
             callback(null, results);
           }
         } catch (err) {
-          console.log("\n====================================");
-          console.log("🔍 EXECUTING SQL QUERY");
-          console.log("SQL     :", sql);
-          console.log("PARAMS  :", params);
-          console.log("❌ SQL ERROR:");
-          console.log("Message:", err.message);
-          console.log("Code:", err.code);
-          if (err.sqlMessage) console.log("SQL Message:", err.sqlMessage);
-          console.log("====================================");
+          // ALWAYS log errors
+          console.error("\n[DB] ❌ ERROR:", err.message);
+          console.error("[DB] SQL:", sql.substring(0, 100) + (sql.length > 100 ? "..." : ""));
+          console.error("[DB] PARAMS:", params);
+          if (err.sqlMessage) console.error("[DB] SQL Message:", err.sqlMessage);
+          console.error("[DB] Code:", err.code);
           
           // Call callback dengan error
           if (typeof callback === 'function') {
@@ -58,7 +59,7 @@ const db = {
         }
       })
       .catch((err) => {
-        console.log("❌ Pool error:", err.message);
+        console.error("[DB] ❌ Pool error:", err.message);
         if (typeof callback === 'function') {
           callback(err);
         }

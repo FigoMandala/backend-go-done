@@ -9,19 +9,9 @@ import cloudinary from "../cloudinary.js";
 const router = express.Router();
 
 /* ============================================================
-   MULTER CONFIG (UPLOAD FOTO PROFIL)
+   MULTER CONFIG (UPLOAD FOTO PROFIL - Memory Storage)
    ============================================================ */
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "./uploads/profile");
-  },
-  filename: (req, file, cb) => {
-    const ext = file.originalname.split(".").pop();
-    cb(null, `user-${Date.now()}.${ext}`);
-  }
-});
-
-const upload = multer({ storage });
+const upload = multer({ storage: multer.memoryStorage() });
 
 /* ============================================================
    GET USER PROFILE

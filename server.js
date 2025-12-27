@@ -14,10 +14,10 @@
   app.use(express.json());
   app.use("/uploads", express.static("uploads"));
 
-  app.use("/api/auth", authRoutes);
-  app.use("/api/user", userRoutes);
-  app.use("/api/tasks", taskRoutes);
-  app.use("/api/categories", categoryRoutes);
+  app.use("/auth", authRoutes);
+  app.use("/user", userRoutes);
+  app.use("/tasks", taskRoutes);
+  app.use("/categories", categoryRoutes);
 
   app.listen(process.env.PORT, () =>
     console.log(`GoDone Backend`)
