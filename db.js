@@ -1,8 +1,13 @@
 import mysql from "mysql2/promise";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 let pool = null;
-const DEBUG = process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development';
 
+// ===============================================
+// CREATE POOL
+// ===============================================
 async function getPool() {
   if (!pool) {
     pool = mysql.createPool({
@@ -12,84 +17,66 @@ async function getPool() {
       password: process.env.DB_PASS,
       database: process.env.DB_NAME,
       waitForConnections: true,
+      connectionLimit: 10,
       queueLimit: 0,
-      enableKeepAlive: true,
-      keepAliveInitialDelayMs: 0,
+      connectTimeout: 10000,
     });
 
-    // Handle pool errors
-    pool.on('error', (err) => {
-      console.error('[DB] Pool error:', err.message);
-      if (err.code === 'PROTOCOL_CONNECTION_LOST') {
-        console.log('[DB] Connection lost, will reconnect on next query');
-        pool = null;
-      }
-      if (err.code === 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
-        console.log('[DB] Fatal error, will reconnect on next query');
-        pool = null;
-      }
-      if (err.code === 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
-        console.log('[DB] Too many connections, will reconnect on next query');
-        pool = null;
-      }
-    });
+    // Test connection
+    try {
+      const conn = await pool.getConnection();
+      console.log('✅ Database connected');
+      conn.release();
+    } catch (err) {
+      console.error('❌ Database connection failed:', err.message);
+      pool = null;
+      throw err;
+    }
   }
   return pool;
 }
 
 // ===============================================
-// WRAPPER untuk kompatibilitas callback
+// QUERY WRAPPER
 // ===============================================
 const db = {
   query(sql, params, callback) {
-    // Retry logic dengan exponential backoff
     const maxRetries = 3;
     let retryCount = 0;
 
     const executeQuery = async () => {
       try {
-        const startTime = Date.now();
         const poolInstance = await getPool();
         const [results] = await poolInstance.query(sql, params);
-        const duration = Date.now() - startTime;
-        
-        if (DEBUG) {
-          console.log("\n[DB] ✅ Query SUCCESS");
-          console.log("[DB] SQL:", sql.substring(0, 100) + (sql.length > 100 ? "..." : ""));
-          console.log("[DB] PARAMS:", params);
-          console.log("[DB] Duration:", duration + "ms");
-          console.log("[DB] Rows:", results.length || 0);
-        }
         
         if (typeof callback === 'function') {
           callback(null, results);
         }
       } catch (err) {
-        // Check if error is connection-related
-        const isConnectionError = 
+        // Retry untuk connection error
+        const isRetriableError = 
           err.code === 'ECONNREFUSED' || 
           err.code === 'PROTOCOL_CONNECTION_LOST' || 
           err.code === 'ETIMEDOUT' ||
-          err.code === 'EHOSTUNREACH';
+          err.code === 'EHOSTUNREACH' ||
+          err.code === 'ENOTFOUND';
 
-        if (isConnectionError && retryCount < maxRetries) {
+        if (isRetriableError && retryCount < maxRetries) {
           retryCount++;
-          const delayMs = Math.pow(2, retryCount) * 1000; // Exponential backoff: 2s, 4s, 8s
+          const delayMs = Math.pow(2, retryCount) * 1000;
           
-          console.warn(`[DB] ⚠️ Connection error (${err.code}), retrying in ${delayMs}ms... (Attempt ${retryCount}/${maxRetries})`);
+          console.warn(`⚠️  DB Error: ${err.code} - Retry ${retryCount}/${maxRetries} in ${delayMs}ms`);
           
-          // Reset pool for next attempt
           pool = null;
-          
-          // Retry after delay
           setTimeout(executeQuery, delayMs);
         } else {
-          // Log error
-          console.error("\n[DB] ❌ ERROR:", err.message);
-          console.error("[DB] SQL:", sql.substring(0, 100) + (sql.length > 100 ? "..." : ""));
-          console.error("[DB] PARAMS:", params);
-          if (err.sqlMessage) console.error("[DB] SQL Message:", err.sqlMessage);
-          console.error("[DB] Code:", err.code);
+          // Log error final
+          console.error('❌ DB Query Error:', {
+            code: err.code,
+            message: err.message,
+            sql: sql.substring(0, 100) + '...',
+            params: params
+          });
           
           if (typeof callback === 'function') {
             callback(err);
@@ -101,5 +88,14 @@ const db = {
     executeQuery();
   }
 };
+
+// Graceful shutdown
+process.on('SIGINT', async () => {
+  if (pool) {
+    await pool.end();
+    console.log('✅ Database connection closed');
+  }
+  process.exit(0);
+});
 
 export default db;
