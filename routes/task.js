@@ -146,10 +146,11 @@ router.put("/:task_id", verifyToken, (req, res) => {
     }
     updates.push("status=?");
     params.push(status);
-    updates.push("updated_at=NOW()");
   }
 
-  if (updates.length === 0) {
+  updates.push("updated_at=NOW()");
+
+  if (updates.length === 1) {
     return res.status(400).json({ error: "No fields to update" });
   }
 
