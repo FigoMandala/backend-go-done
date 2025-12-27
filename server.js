@@ -1,12 +1,16 @@
   import express from "express";
   import cors from "cors";
   import dotenv from "dotenv";
+
+  if (process.env.NODE_ENV !== 'production') {
+    dotenv.config();
+  }
+
   import authRoutes from "./routes/auth.js";
   import userRoutes from "./routes/user.js";
   import taskRoutes from "./routes/task.js";
   import categoryRoutes from "./routes/category.js";
 
-  dotenv.config();
   const app = express();
 
   // Middlewares
