@@ -3,6 +3,7 @@ import db from "../db.js";
 import bcrypt from "bcryptjs";
 import { verifyToken } from "../middleware/auth.js";
 import multer from "multer";
+import fs from "fs";
 import cloudinary from "../cloudinary.js";
 
 const router = express.Router();
@@ -46,55 +47,59 @@ router.post(
   "/photo",
   verifyToken,
   upload.single("photo"),
-  async (req, res) => {
-    try {
-      const userId = req.user.user_id;
+  (req, res) => {
+    const userId = req.user.user_id;
 
-      if (!req.file) {
-        return res.json({ success: false, message: "No file uploaded" });
-      }
-
-  // STEP 1: ambil foto lama
-  db.query("SELECT photo_url FROM users WHERE user_id = ?", [userId], (err, rows) => {
-    if (err) {
-      console.log("PHOTO SELECT ERROR:", err);
-      return res.json({ success: false, message: "Server error" });
+    if (!req.file) {
+      return res.json({ success: false, message: "No file uploaded" });
     }
 
-    const oldPhotoURL = rows[0]?.photo_url;
-
-    // STEP 2: hapus file lama jika ada
-    if (oldPhotoURL) {
-      const filePath = `.${oldPhotoURL}`;
-      if (fs.existsSync(filePath)) {
-        fs.unlink(filePath, (err) => {
-          if (err) console.log("Failed to delete old photo:", err);
-        });
-      }
-    }
-
-    // STEP 3: simpan foto baru
-    db.query(
-      "UPDATE users SET photo_url = ? WHERE user_id = ?",
-      [newPhotoURL, userId],
-      (err2) => {
-        if (err2) {
-          console.log("PHOTO UPDATE ERROR:", err2);
-          return res.json({
-            success: false,
-            message: "Failed to update photo"
-          });
+    // STEP 1: upload ke Cloudinary
+    const stream = cloudinary.uploader.upload_stream(
+      { folder: "godone/profile" },
+      (error, result) => {
+        if (error) {
+          console.log("CLOUDINARY ERROR:", error);
+          return res.json({ success: false, message: "Failed to upload photo" });
         }
 
-        res.json({
-          success: true,
-          message: "Photo updated successfully",
-          photo_url: newPhotoURL,
+        const newPhotoURL = result.secure_url;
+
+        // STEP 2: ambil foto lama dari DB
+        db.query("SELECT photo_url FROM users WHERE user_id = ?", [userId], (err, rows) => {
+          if (err) {
+            console.log("PHOTO SELECT ERROR:", err);
+            return res.json({ success: false, message: "Server error" });
+          }
+
+          // STEP 3: update URL di database
+          db.query(
+            "UPDATE users SET photo_url = ? WHERE user_id = ?",
+            [newPhotoURL, userId],
+            (err2) => {
+              if (err2) {
+                console.log("PHOTO UPDATE ERROR:", err2);
+                return res.json({
+                  success: false,
+                  message: "Failed to update photo"
+                });
+              }
+
+              res.json({
+                success: true,
+                message: "Photo updated successfully",
+                photo_url: newPhotoURL,
+              });
+            }
+          );
         });
       }
     );
-  });
-});
+
+    // Upload file buffer to Cloudinary
+    stream.end(req.file.buffer);
+  }
+);
 
 
 /* ============================================================
@@ -111,7 +116,7 @@ router.put("/update", verifyToken, (req, res) => {
     const user = rows[0];
     const changePassword = currentPassword && newPassword;
 
-    if (isChangingPassword) {
+    if (changePassword) {
       const validPass = bcrypt.compareSync(currentPassword, user.password);
 
       if (!validPass) {
