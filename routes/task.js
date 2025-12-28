@@ -153,13 +153,14 @@ router.put("/:task_id", verifyToken, (req, res) => {
   }
 
   if (status !== undefined) {
-    if (!["pending", "Done"].includes(status)) {
-      return res.status(400).json({ error: "Invalid status" });
+    const normalizedStatus = status.toLowerCase();
+    if (!["pending", "done", "completed"].includes(normalizedStatus)) {
+      return res.status(400).json({ error: "Invalid status. Must be 'pending' or 'done'" });
     }
-    // Normalize status to correct case
-    const normalizedStatus = status === "pending" ? "pending" : "Done";
+    // Normalize status to correct case - "completed" dan "done" both become "Done"
+    const capitalizedStatus = normalizedStatus === "pending" ? "pending" : "Done";
     updates.push("status=?");
-    params.push(normalizedStatus);
+    params.push(capitalizedStatus);
   }
 
   updates.push("updated_at=NOW()");

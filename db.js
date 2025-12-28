@@ -1,15 +1,16 @@
 import mysql from "mysql2/promise";
 import dotenv from "dotenv";
 
-if (process.env.NODE_ENV !== 'production') {
-  dotenv.config();
-}
+dotenv.config();
 
+/* ===============================
+   POOL HOLDER
+   =============================== */
 let pool = null;
 
-// ===============================================
-// CREATE POOL
-// ===============================================
+/* ===============================
+   CREATE / GET POOL
+   =============================== */
 async function getPool() {
   if (!pool) {
     pool = mysql.createPool({
@@ -24,80 +25,66 @@ async function getPool() {
       connectTimeout: 10000,
     });
 
-    // Test connection
-    try {
-      const conn = await pool.getConnection();
-      console.log('✅ Database connected');
-      conn.release();
-    } catch (err) {
-      console.error('❌ Database connection failed:', err.message);
-      pool = null;
-      throw err;
-    }
+    // Test initial connection
+    const conn = await pool.getConnection();
+    conn.release();
+    console.log("Database connected");
   }
   return pool;
 }
 
-// ===============================================
-// QUERY WRAPPER
-// ===============================================
+/* ===============================
+   QUERY WRAPPER
+   =============================== */
 const db = {
-  query(sql, params, callback) {
+  async query(sql, params = [], callback) {
     const maxRetries = 3;
     let retryCount = 0;
 
-    const executeQuery = async () => {
+    const execute = async () => {
+      let conn;
       try {
         const poolInstance = await getPool();
-        const [results] = await poolInstance.query(sql, params);
-        
-        if (typeof callback === 'function') {
-          callback(null, results);
-        }
-      } catch (err) {
-        // Retry untuk connection error
-        const isRetriableError = 
-          err.code === 'ECONNREFUSED' || 
-          err.code === 'PROTOCOL_CONNECTION_LOST' || 
-          err.code === 'ETIMEDOUT' ||
-          err.code === 'EHOSTUNREACH' ||
-          err.code === 'ENOTFOUND';
+        conn = await poolInstance.getConnection();
 
-        if (isRetriableError && retryCount < maxRetries) {
+        const [results] = await conn.query(sql, params);
+
+        if (callback) callback(null, results);
+      } catch (err) {
+        const retriable =
+          err.code === "ECONNREFUSED" ||
+          err.code === "PROTOCOL_CONNECTION_LOST" ||
+          err.code === "ETIMEDOUT" ||
+          err.code === "EHOSTUNREACH" ||
+          err.code === "ENOTFOUND";
+
+        if (retriable && retryCount < maxRetries) {
           retryCount++;
-          const delayMs = Math.pow(2, retryCount) * 1000;
-          
-          console.warn(`⚠️  DB Error: ${err.code} - Retry ${retryCount}/${maxRetries} in ${delayMs}ms`);
-          
           pool = null;
-          setTimeout(executeQuery, delayMs);
+          setTimeout(execute, 2 ** retryCount * 1000);
         } else {
-          // Log error final
-          console.error('❌ DB Query Error:', {
-            code: err.code,
-            message: err.message,
-            sql: sql.substring(0, 100) + '...',
-            params: params
-          });
-          
-          if (typeof callback === 'function') {
-            callback(err);
-          }
+          if (callback) callback(err);
         }
+      } finally {
+        if (conn) conn.release();
       }
     };
 
-    executeQuery();
-  }
+    execute();
+  },
 };
 
-// Graceful shutdown
-process.on('SIGINT', async () => {
+/* ===============================
+   GRACEFUL SHUTDOWN
+   =============================== */
+async function shutdown() {
   if (pool) {
     await pool.end();
-    console.log('✅ Database connection closed');
   }
   process.exit(0);
-});
+}
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
 
 export default db;
