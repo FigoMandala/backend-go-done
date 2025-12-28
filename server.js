@@ -12,8 +12,13 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middlewares
-app.use(cors());
+app.use(cors({
+  origin: "https://frontend-go-done.vercel.app",
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true
+}));
+
 app.use(express.json());
 app.use("/uploads", express.static("uploads"));
 app.get("/", (req, res) => {
@@ -28,7 +33,6 @@ app.use("/user", userRoutes);
 app.use("/tasks", taskRoutes);
 app.use("/categories", categoryRoutes);
 
-// Error handler (HARUS PALING BAWAH)
 app.use((err, req, res, next) => {
   console.error("❌ Error:", err);
   res.status(500).json({ error: err.message });
