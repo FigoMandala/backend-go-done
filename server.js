@@ -1,30 +1,30 @@
-  import express from "express";
-  import cors from "cors";
-  import dotenv from "dotenv";
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+import authRoutes from "./routes/auth.js";
+import userRoutes from "./routes/user.js";
+import taskRoutes from "./routes/task.js";
+import categoryRoutes from "./routes/category.js";
 
-  if (process.env.NODE_ENV !== 'production') {
-    dotenv.config();
-  }
+dotenv.config();
 
-  import authRoutes from "./routes/auth.js";
-  import userRoutes from "./routes/user.js";
-  import taskRoutes from "./routes/task.js";
-  import categoryRoutes from "./routes/category.js";
+const app = express();
 
-  const app = express();
+// Middlewares
+app.use(cors());
+app.use(express.json());
+app.use("/uploads", express.static("uploads"));
 
-  // Middlewares
-  app.use(cors());
-  app.use(express.json());
-  app.use("/uploads", express.static("uploads"));
+// Routes
+app.use("/auth", authRoutes);
+app.use("/user", userRoutes);
+app.use("/tasks", taskRoutes);
+app.use("/categories", categoryRoutes);
 
-  app.use("/auth", authRoutes);
-  app.use("/user", userRoutes);
-  app.use("/tasks", taskRoutes);
-  app.use("/categories", categoryRoutes);
+const PORT = process.env.PORT || 8000;
 
-  app.listen(process.env.PORT, () =>
-    console.log(`GoDone Backend`)
-  );
+app.listen(PORT, () => {
+  console.log(`🚀 GoDone Backend running on port ${PORT}`);
+});
 
-  export default app;
+export default app;
