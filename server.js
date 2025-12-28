@@ -26,7 +26,9 @@ app.get("/", (req, res) => {
 app.use("/auth", authRoutes);
 app.use("/user", userRoutes);
 app.use("/tasks", taskRoutes);
-app.use("/categories", categoryRoutes);\
+app.use("/categories", categoryRoutes);
+
+// Error handler (HARUS PALING BAWAH)
 app.use((err, req, res, next) => {
   console.error("❌ Error:", err);
   res.status(500).json({ error: err.message });
