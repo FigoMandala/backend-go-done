@@ -76,7 +76,7 @@ router.post("/login", (req, res) => {
     if (err) return res.json({ success: false, message: "Server error" });
 
     if (result.length === 0)
-      return res.json({ success: false, message: "Email tidak ditemukan!" });
+      return res.json({ success: false, message: "Email Atau Username tidak ditemukan!" });
 
     const user = result[0];
 
